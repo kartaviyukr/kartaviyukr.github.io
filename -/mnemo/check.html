@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Мнемо — проверка переезда</title>
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; background: #14122B; color: #ECEAF7; font: 16px/1.45 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; padding: 20px 16px 40px; }
+  .box { max-width: 480px; margin: 0 auto; }
+  h2 { margin: 4px 0 12px; }
+  .card { background: #211E42; border-radius: 14px; padding: 12px 14px; margin: 10px 0; }
+  .row { display: flex; justify-content: space-between; gap: 12px; padding: 4px 0; border-bottom: 1px solid #2E2A58; }
+  .row:last-child { border-bottom: 0; }
+  .muted { color: #A9A4CC; font-size: 14px; }
+  button { display: block; width: 100%; margin: 10px 0 0; padding: 13px 16px; border: 0; border-radius: 12px; font: inherit; font-weight: 700; background: #7C5CFF; color: #fff; }
+  button.ghost { background: #2A2650; }
+  textarea { width: 100%; box-sizing: border-box; margin-top: 10px; height: 90px; background: #0E0C20; color: #ECEAF7; border: 1px solid #2E2A58; border-radius: 10px; font: 12px/1.3 ui-monospace, Menlo, monospace; }
+  a { color: #A993FF; }
+</style>
+</head>
+<body>
+<div class="box">
+  <h2>🔍 Что лежит на старом адресе</h2>
+  <div id="out" class="muted">Читаю память…</div>
+  <div id="act"></div>
+  <p class="muted"><a href="https://kartaviys.github.io/-/mnemo/">Открыть новый адрес</a></p>
+</div>
+<script>
+/* Проверка переезда на СТАРОМ адресе: показывает, что сохранено в памяти браузера старого адреса,
+ * и позволяет перенести данные ещё раз или сохранить их как резервную копию («Ещё» → «Резервная копия»). */
+(async function () {
+  var NEW = 'https://kartaviys.github.io/-/mnemo/';
+  var $ = function (id) { return document.getElementById(id); };
+  var esc = function (s) { return String(s == null ? '' : s).replace(/[&<>"]/g, function (c) { return { '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]; }); };
+  var raw = null, photos = null, moved = null;
+  try { raw = localStorage.getItem('mnemo.v1'); photos = localStorage.getItem('mnemo.photos2'); moved = localStorage.getItem('mnemo.moved'); } catch (e) {}
+  if (!raw) { $('out').innerHTML = '<div class="card">Здесь данных Мнемо нет.<br><span class="muted">На iPhone у иконки на экране «Домой» и у Safari память раздельная. Если вы занимались с иконки — откройте старую иконку: она покажет ссылку на эту страницу.</span></div>'; return; }
+  var db = null;
+  try { db = JSON.parse(raw); } catch (e) {}
+  if (!db) { $('out').innerHTML = '<div class="card">Данные есть, но повреждены (' + raw.length + ' символов).</div>'; return; }
+  var decks = Array.isArray(db.decks) ? db.decks : [];
+  var own = decks.filter(function (d) { return !d.builtin; });
+  var extra = 0; Object.keys(db.bdeck || {}).forEach(function (k) { extra += ((db.bdeck[k] || {}).extra || []).length; });
+  var h = '<div class="card">'
+    + '<div class="row"><span>Слов с прогрессом</span><b>' + Object.keys(db.prog || {}).length + '</b></div>'
+    + '<div class="row"><span>Своих наборов</span><b>' + own.length + '</b></div>'
+    + '<div class="row"><span>Карточек в своих наборах</span><b>' + own.reduce(function (n, d) { return n + (d.cards || []).length; }, 0) + '</b></div>'
+    + '<div class="row"><span>Своих карточек во встроенных наборах</span><b>' + extra + '</b></div>'
+    + '<div class="row"><span>Размер данных</span><b>' + Math.round(raw.length / 1024) + ' КБ</b></div>'
+    + '<div class="row"><span>Уже переносили</span><b>' + (moved ? 'да' : 'нет') + '</b></div></div>';
+  if (decks.length) h += '<div class="card">' + decks.map(function (d) {
+    return '<div class="row"><span>' + esc(d.emoji || '📘') + ' ' + esc(d.title || d.id) + (d.builtin ? ' <span class="muted">(встроенный)</span>' : '') + '</span><b>' + (d.cards || []).length + '</b></div>';
+  }).join('') + '</div>';
+  $('out').innerHTML = h;
+  $('act').innerHTML = '<button id="again">Перенести на новый адрес ещё раз</button>'
+    + '<button class="ghost" id="copy">Скопировать резервную копию</button>'
+    + '<button class="ghost" id="file">Сохранить резервную копию в файл</button>'
+    + '<p class="muted">Копию можно восстановить на новом адресе: «Ещё» → «Резервная копия» → «Восстановить из текста» или «из файла».</p>'
+    + '<textarea id="txt" readonly></textarea>';
+  $('txt').value = raw;
+  $('again').onclick = async function () {
+    var json = '{"db":' + raw + ',"photos":' + (photos || 'null') + '}';
+    var bytes = new TextEncoder().encode(json), tag = 'j';
+    try { bytes = new Uint8Array(await new Response(new Blob([bytes]).stream().pipeThrough(new CompressionStream('gzip'))).arrayBuffer()); tag = 'z'; } catch (e) {}
+    var bin = '';
+    for (var i = 0; i < bytes.length; i += 0x8000) bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 0x8000));
+    try { localStorage.setItem('mnemo.moved', '1'); } catch (e) {}
+    location.href = NEW + 'move.html#' + tag + btoa(bin).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+  };
+  $('copy').onclick = async function () {
+    try { await navigator.clipboard.writeText(raw); this.textContent = 'Скопировано ✓'; }
+    catch (e) { var t = $('txt'); t.focus(); t.select(); t.setSelectionRange(0, raw.length); try { document.execCommand('copy'); this.textContent = 'Скопировано ✓'; } catch (e2) { this.textContent = 'Выделите текст ниже и скопируйте'; } }
+  };
+  $('file').onclick = async function () {
+    var name = 'mnemo-backup.json', blob = new Blob([raw], { type: 'application/json' });
+    try { var f = new File([blob], name, { type: 'application/json' }); if (navigator.canShare && navigator.canShare({ files: [f] })) { await navigator.share({ files: [f] }); return; } } catch (e) { if (e && e.name === 'AbortError') return; }
+    var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; document.body.appendChild(a); a.click(); a.remove();
+  };
+})();
+</script>
+</body>
+</html>

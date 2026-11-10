@@ -25,7 +25,14 @@
   try { db = localStorage.getItem('mnemo.v1'); photos = localStorage.getItem('mnemo.photos2'); } catch (e) {}
   // Старый service worker больше не нужен: пусть старая иконка всегда берёт эту страницу из сети.
   try { (await navigator.serviceWorker.getRegistrations()).forEach(function (r) { r.unregister(); }); } catch (e) {}
-  if (!db || localStorage.getItem('mnemo.moved')) return go(NEW);
+  if (!db) return go(NEW);
+  if (localStorage.getItem('mnemo.moved')) {
+    // Уже переносили: даём пару секунд, чтобы открыть проверку (у иконки на iPhone своя память, Safari её не видит).
+    document.querySelector('p').innerHTML = 'Прогресс уже перенесён. Открываю новый адрес…<br><a href="check.html" id="chk">Что-то не перенеслось? Проверить</a>';
+    var t = setTimeout(function () { go(NEW); }, 2500);
+    document.getElementById('chk').onclick = function () { clearTimeout(t); };
+    return;
+  }
   var json = '{"db":' + db + ',"photos":' + (photos || 'null') + '}';
   var bytes = new TextEncoder().encode(json), tag = 'j';
   try {
